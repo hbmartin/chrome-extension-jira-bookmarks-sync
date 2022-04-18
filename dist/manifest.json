@@ -1,0 +1,22 @@
+{
+    "manifest_version": 3,
+    "name": "Jira Bookmarks Sync",
+    "description": "Sync Jira issues to your bookmarks.",
+    "version": "1.0.0",
+    "permissions": [
+        "bookmarks",
+        "alarms",
+        "storage",
+        "notifications"
+    ],
+    "host_permissions": [
+        "https://*.atlassian.net/*",
+        "https://github.com/*"
+    ],
+    "background": {
+        "service_worker": "js/eventPage.js"
+    },
+    "icons": {
+        "128": "icon128.png"
+    }
+}
