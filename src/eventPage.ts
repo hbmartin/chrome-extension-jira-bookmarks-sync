@@ -1,12 +1,11 @@
 import BookmarkTreeNode = chrome.bookmarks.BookmarkTreeNode;
 import BookmarkMoveInfo = chrome.bookmarks.BookmarkMoveInfo;
 
-const baseUrl = ""
-const email = ""
-const token = ""
-const auth = 'Basic ' + btoa(`${email}:${token}`);
+// TODO: transition cache
 const JQL = 'assignee = currentUser() and statusCategory != Done ORDER BY updatedDate DESC';
 const rootFolderKey = "rootFolderKey";
+const foldersIdMapKey = "folders";
+const jiraUrlKey = "jiraUrlKey";
 
 function $<T>(api): (...args: any) => Promise<T> {
     return (...args: any): Promise<T> => {
@@ -33,13 +32,13 @@ chrome.bookmarks.onMoved.addListener(function(id: string, moveInfo: BookmarkMove
                 if (bookmarks.length != 0) {
                     const url = bookmarks[0].url
                     const key = url.split("/").pop()
-                    fetchIssue(auth, key)
+                    fetchIssue(key)
                         .then(data => {
                             console.log(data);
                             const transition = data['transitions'].find(t => t["to"]["name"] == toStatusName);
                             if (transition) {
                                 console.log(`found transitionId: ${transition}`)
-                                transitionIssue(auth, key, transition["id"])
+                                transitionIssue(key, transition["id"])
                                     .then(result => {
                                         console.log(result);
                                         if (result.ok) {
@@ -87,7 +86,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return isResponseAsync;
 });
 
-const clearBookmarks = function(id: string, existing: string[]): Promise<void[]> {
+const clearIssueChildBookmarks = function(id: string, existing: string[]): Promise<void[]> {
     return $<BookmarkTreeNode[]>(chrome.bookmarks.getChildren)(id)
         .then(bookmarks => {
             return Promise.all(
@@ -97,7 +96,7 @@ const clearBookmarks = function(id: string, existing: string[]): Promise<void[]>
                         $(chrome.bookmarks.remove)(bookmark["id"]);
                     } else if (existing.includes(bookmark["id"])) {
                         /// clearing nested folder
-                        clearBookmarks(bookmark["id"], []);
+                        clearIssueChildBookmarks(bookmark["id"], []);
                     } else {
                         // shouldn't have any unknown folders
                         $(chrome.bookmarks.removeTree)(bookmark["id"]);
@@ -117,7 +116,6 @@ const createStatusFolders = function(rootFolderId: string, statusNames: string[]
         )
     )
         .then(results => {
-            console.log(results);
             const folders = results.reduce<Record<string, string>>((reduced, folder) => {
                 reduced[folder["title"]] = folder["id"];
                 return reduced;
@@ -129,77 +127,85 @@ const createStatusFolders = function(rootFolderId: string, statusNames: string[]
         });
 }
 
-const fetchIssue = function(auth: string, id: string): Promise<any> {
-    return fetch(
-        `${baseUrl}/rest/api/2/issue/${id}` +
-        "?expand=transitions&fields=transitions"
-        ,
-        {
-            method: 'GET',
-            headers: new Headers({
-                'Authorization': auth
-            }),
-        }
-    )
+const fetchIssue = function(id: string): Promise<any> {
+    return getJiraUrl()
+        .then(baseUrl => {
+            return fetch(
+                `${baseUrl}/rest/api/2/issue/${id}` +
+                "?expand=transitions&fields=transitions"
+                ,
+                {
+                    method: 'GET',
+                }
+            )
+        })
         .then(response => {
             return response.json();
         })
 };
 
-const transitionIssue = function(auth: string, issueKey: string, transitionId: string): Promise<any> {
-    return fetch(
-        `${baseUrl}/rest/api/2/issue/${issueKey}/transitions`,
-        {
-            method: 'POST',
-            headers: new Headers({
-                'Authorization': auth,
-                'Content-Type': 'application/json'
-            }),
-            body: JSON.stringify({ "transition": { "id": transitionId } })
-        }
-    );
+const transitionIssue = function(issueKey: string, transitionId: string): Promise<any> {
+    return getJiraUrl()
+        .then(baseUrl => {
+            return fetch(
+                `${baseUrl}/rest/api/2/issue/${issueKey}/transitions`,
+                {
+                    method: 'POST',
+                    headers: new Headers({
+                        'Content-Type': 'application/json'
+                    }),
+                    body: JSON.stringify({ "transition": { "id": transitionId } })
+                }
+            );
+        })
 };
 
-const fetchIssues = function(auth: string, jql: string): Promise<any> {
-    return fetch(
-        `${baseUrl}/rest/api/2/search?maxResults=50` +
-        "&expand=transitions" +
-        `&jql=${encodeURIComponent(jql)}` +
-        `&fields=${encodeURIComponent('summary,issuetype,status,assignee,fixVersions')}`
-        ,
-        {
-            method: 'GET',
-            headers: new Headers({
-                'Authorization': auth
-            }),
-        }
-    )
+const fetchIssues = function(jql: string): Promise<any> {
+    return getJiraUrl()
+        .then(baseUrl => {
+            return fetch(
+                `${baseUrl}/rest/api/2/search?maxResults=50` +
+                "&expand=transitions" +
+                `&jql=${encodeURIComponent(jql)}` +
+                `&fields=${encodeURIComponent('summary,issuetype,status,assignee,fixVersions')}`
+                ,
+                {
+                    method: 'GET'
+                }
+            )
+        })
         .then(response => {
             return response.json();
         });
 };
 
 const createBookmarksFromIssues = function(rootFolderId: string, issues: any, folderMap: Record<string, string>): Promise<BookmarkTreeNode[]> {
-    return Promise.all<BookmarkTreeNode>(
-        issues.map(issue => {
-            const status = issue['fields']['status']['name'];
-            const title = `[${issue['key']}] ${issue['fields']['summary']}`
-            const url = `${baseUrl}/browse/${issue['key']}`
-            return $<BookmarkTreeNode>(chrome.bookmarks.create)({
-                "parentId": folderMap[status] || rootFolderId,
-                "title": title,
-                "url": url
-            });
-        })
-    )
+    console.log("createBookmarksFromIssues: folderMap");
+    console.log(folderMap);
+
+    return getJiraUrl()
+        .then(baseUrl => {
+            return Promise.all<BookmarkTreeNode>(
+                issues.map(issue => {
+                    const status = issue['fields']['status']['name'];
+                    const title = `[${issue['key']}] ${issue['fields']['summary']}`
+                    const url = `${baseUrl}/browse/${issue['key']}`
+                    return $<BookmarkTreeNode>(chrome.bookmarks.create)({
+                        "parentId": folderMap[status] || rootFolderId,
+                        "title": title,
+                        "url": url
+                    });
+                })
+            )
+        });
+}
+
+const getJiraUrl = function(): Promise<string> {
+    return chrome.storage.sync.get(jiraUrlKey).then(items => { return items[jiraUrlKey] });
 }
 
 const getOwnedFolders = function(): Promise<Record<string, string>> {
-    return new Promise((resolve) => {
-        chrome.storage.local.get(storage => {
-            resolve(storage["folders"]);
-        });
-    });
+    return chrome.storage.sync.get(foldersIdMapKey).then(items => { return items[foldersIdMapKey] });
 }
 
 const getRootFolderId = function(): Promise<string> {
@@ -219,17 +225,21 @@ const getRootFolderId = function(): Promise<string> {
         });
 }
 
-const main = function() {
-    return getRootFolderId().then(rootFolderId => {
+const isNonEmptyString = (val) => typeof val === 'string' && !!val
+
+const syncJiraToBookmarks = function() {
+    getRootFolderId().then(rootFolderId => {
         console.log(`main: getRootFolderId: ${rootFolderId}`);
         getOwnedFolders()
             .then(folders => {
-                console.log(folders ? folders : "no owned folders");
-                return clearBookmarks(rootFolderId, folders ? Object.values(folders) : [])
+                console.log(folders ? `folders: ${folders}` : "no owned folders");
+                return clearIssueChildBookmarks(rootFolderId, folders ? Object.values(folders) : [])
                     .then(() => {
-                        return fetchIssues(auth, JQL);
+                        console.log(`fetching: ${JQL}`);
+                        return fetchIssues(JQL);
                     })
                     .then(data => {
+                        console.log("data");
                         console.log(data);
                         const statusNames = new Set<string>();
                         data["issues"].forEach(issue => {
@@ -241,12 +251,24 @@ const main = function() {
                             .filter(status => !oldStatuses.includes(status));
                         return createStatusFolders(rootFolderId, newStatuses)
                             .then(folderMap => {
-                                console.log(folderMap);
                                 return createBookmarksFromIssues(rootFolderId, data["issues"], { ...folderMap, ...folders });
                             });
                     });
             });
     });
+}
+
+const main = function() {
+    return getJiraUrl().then(baseUrl => {
+        if (isNonEmptyString(baseUrl)) {
+            syncJiraToBookmarks();
+        } else {
+            // TODO: move to popup
+            let jiraUrl = window.prompt("Please enter your Jira URL", "https://XYZ.atlassian.net");
+            console.log(jiraUrl);
+            // TODO: check ending slash and store
+        }
+    })
 }
 
 // TODO: configuration of JIRA bookmark root

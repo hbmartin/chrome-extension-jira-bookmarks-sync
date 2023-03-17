@@ -13,6 +13,7 @@
     "devDependencies": {
         "@babel/core": "^7.21.3",
         "@babel/eslint-parser": "^7.21.3",
+        "@babel/preset-env": "^7.20.2",
         "@types/chrome": "^0.0.224",
         "@types/react": "^18",
         "@types/react-dom": "^18",
@@ -43,5 +44,6 @@
     "dependencies": {
         "react": "^18.2.0",
         "react-dom": "^18.2.0"
-    }
+    },
+    "browserslist": "last 15 Chrome versions"
 }
