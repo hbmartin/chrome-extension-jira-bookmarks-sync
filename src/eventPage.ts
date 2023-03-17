@@ -1,12 +1,12 @@
 import BookmarkTreeNode = chrome.bookmarks.BookmarkTreeNode;
 import BookmarkMoveInfo = chrome.bookmarks.BookmarkMoveInfo;
 
-const bookmark_id = "11624";
 const baseUrl = ""
 const email = ""
 const token = ""
 const auth = 'Basic ' + btoa(`${email}:${token}`);
 const JQL = 'assignee = currentUser() and statusCategory != Done ORDER BY updatedDate DESC';
+const rootFolderKey = "rootFolderKey";
 
 function $<T>(api): (...args: any) => Promise<T> {
     return (...args: any): Promise<T> => {
@@ -17,7 +17,7 @@ function $<T>(api): (...args: any) => Promise<T> {
 }
 
 // TODO: monitor removed event as well
-chrome.bookmarks.onMoved.addListener(function (id: string, moveInfo: BookmarkMoveInfo) {
+chrome.bookmarks.onMoved.addListener(function(id: string, moveInfo: BookmarkMoveInfo) {
     console.log(moveInfo);
     // if it's one of our folders but not an issue, move it back (TODO)
     // if it is a ticket, try to transition it
@@ -29,7 +29,7 @@ chrome.bookmarks.onMoved.addListener(function (id: string, moveInfo: BookmarkMov
         console.log(folders);
         const toStatusName = Object.keys(folders).find(k => folders[k] == moveInfo.parentId);
         if (toStatusName) {
-            chrome.bookmarks.get(id, function (bookmarks: BookmarkTreeNode[]) {
+            chrome.bookmarks.get(id, function(bookmarks: BookmarkTreeNode[]) {
                 if (bookmarks.length != 0) {
                     const url = bookmarks[0].url
                     const key = url.split("/").pop()
@@ -87,7 +87,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return isResponseAsync;
 });
 
-const clearBookmarks = function (id: string, existing: string[]): Promise<void[]> {
+const clearBookmarks = function(id: string, existing: string[]): Promise<void[]> {
     return $<BookmarkTreeNode[]>(chrome.bookmarks.getChildren)(id)
         .then(bookmarks => {
             return Promise.all(
@@ -107,29 +107,29 @@ const clearBookmarks = function (id: string, existing: string[]): Promise<void[]
         });
 }
 
-const createStatusFolders = function (statusNames: string[]): Promise<Record<string, string>> {
+const createStatusFolders = function(rootFolderId: string, statusNames: string[]): Promise<Record<string, string>> {
     return Promise.all(
         statusNames.map(statusName =>
             $<BookmarkTreeNode>(chrome.bookmarks.create)({
-                "parentId": bookmark_id,
+                "parentId": rootFolderId,
                 "title": statusName,
             })
         )
     )
-        .then(function (results): Record<string, string> {
+        .then(results => {
             console.log(results);
             const folders = results.reduce<Record<string, string>>((reduced, folder) => {
-                    reduced[folder["title"]] = folder["id"];
-                    return reduced;
-                },
+                reduced[folder["title"]] = folder["id"];
+                return reduced;
+            },
                 {}
             );
-            chrome.storage.local.set({folders});
+            chrome.storage.local.set({ folders });
             return folders;
         });
 }
 
-const fetchIssue = function (auth: string, id: string): Promise<any> {
+const fetchIssue = function(auth: string, id: string): Promise<any> {
     return fetch(
         `${baseUrl}/rest/api/2/issue/${id}` +
         "?expand=transitions&fields=transitions"
@@ -146,7 +146,7 @@ const fetchIssue = function (auth: string, id: string): Promise<any> {
         })
 };
 
-const transitionIssue = function (auth: string, issueKey: string, transitionId: string): Promise<any> {
+const transitionIssue = function(auth: string, issueKey: string, transitionId: string): Promise<any> {
     return fetch(
         `${baseUrl}/rest/api/2/issue/${issueKey}/transitions`,
         {
@@ -155,12 +155,12 @@ const transitionIssue = function (auth: string, issueKey: string, transitionId: 
                 'Authorization': auth,
                 'Content-Type': 'application/json'
             }),
-            body: JSON.stringify({"transition": {"id": transitionId}})
+            body: JSON.stringify({ "transition": { "id": transitionId } })
         }
     );
 };
 
-const fetchIssues = function (auth: string, jql: string): Promise<any> {
+const fetchIssues = function(auth: string, jql: string): Promise<any> {
     return fetch(
         `${baseUrl}/rest/api/2/search?maxResults=50` +
         "&expand=transitions" +
@@ -179,14 +179,14 @@ const fetchIssues = function (auth: string, jql: string): Promise<any> {
         });
 };
 
-const createBookmarksFromIssues = function (issues: any, folderMap: Record<string, string>): Promise<BookmarkTreeNode[]> {
-    return Promise.all(
+const createBookmarksFromIssues = function(rootFolderId: string, issues: any, folderMap: Record<string, string>): Promise<BookmarkTreeNode[]> {
+    return Promise.all<BookmarkTreeNode>(
         issues.map(issue => {
             const status = issue['fields']['status']['name'];
             const title = `[${issue['key']}] ${issue['fields']['summary']}`
             const url = `${baseUrl}/browse/${issue['key']}`
-            return $(chrome.bookmarks.create)({
-                "parentId": folderMap[status] || bookmark_id,
+            return $<BookmarkTreeNode>(chrome.bookmarks.create)({
+                "parentId": folderMap[status] || rootFolderId,
                 "title": title,
                 "url": url
             });
@@ -202,39 +202,58 @@ const getOwnedFolders = function(): Promise<Record<string, string>> {
     });
 }
 
-const main = function() {
-    getOwnedFolders()
-        .then(folders => {
-            console.log(folders ? folders : "no owned folders");
-            return clearBookmarks(bookmark_id, folders ? Object.values(folders) : [])
-                .then(() => {
-                    return fetchIssues(auth, JQL);
+const getRootFolderId = function(): Promise<string> {
+    return chrome.storage.sync.get(rootFolderKey)
+        .then(items => {
+            if (rootFolderKey in items) {
+                return items[rootFolderKey];
+            } else {
+                return $<BookmarkTreeNode>(chrome.bookmarks.create)({
+                    "title": "Jira Issues (Extension)",
                 })
-                .then(data => {
-                    console.log(data);
-                    const statusNames = new Set<string>();
-                    data["issues"].forEach(issue => {
-                        const status = issue['fields']['status']['name'];
-                        statusNames.add(status);
-                    });
-                    const oldStatuses = folders ? Object.keys(folders) : [];
-                    const newStatuses = Array.from(statusNames.values())
-                        .filter(status => !oldStatuses.includes(status));
-                    return createStatusFolders(newStatuses)
-                        .then(folderMap => {
-                            console.log(folderMap);
-                            console.log(folderMap);
-                            return createBookmarksFromIssues(data["issues"], {...folderMap, ...folders});
-                        });
-                });
+                    .then(bookmarkTreeNode => {
+                        return chrome.storage.sync.set({ rootFolderKey: bookmarkTreeNode.id })
+                            .then(_ => bookmarkTreeNode.id);
+                    })
+            }
         });
 }
 
+const main = function() {
+    return getRootFolderId().then(rootFolderId => {
+        console.log(`main: getRootFolderId: ${rootFolderId}`);
+        getOwnedFolders()
+            .then(folders => {
+                console.log(folders ? folders : "no owned folders");
+                return clearBookmarks(rootFolderId, folders ? Object.values(folders) : [])
+                    .then(() => {
+                        return fetchIssues(auth, JQL);
+                    })
+                    .then(data => {
+                        console.log(data);
+                        const statusNames = new Set<string>();
+                        data["issues"].forEach(issue => {
+                            const status = issue['fields']['status']['name'];
+                            statusNames.add(status);
+                        });
+                        const oldStatuses = folders ? Object.keys(folders) : [];
+                        const newStatuses = Array.from(statusNames.values())
+                            .filter(status => !oldStatuses.includes(status));
+                        return createStatusFolders(rootFolderId, newStatuses)
+                            .then(folderMap => {
+                                console.log(folderMap);
+                                return createBookmarksFromIssues(rootFolderId, data["issues"], { ...folderMap, ...folders });
+                            });
+                    });
+            });
+    });
+}
+
 // TODO: configuration of JIRA bookmark root
-chrome.alarms.onAlarm.addListener(function (alarm) {
+chrome.alarms.onAlarm.addListener(function(alarm) {
     console.log("Got an alarm!", alarm);
     // main()
 });
-chrome.alarms.create({periodInMinutes: 1});
+chrome.alarms.create({ periodInMinutes: 1 });
 
 main();
