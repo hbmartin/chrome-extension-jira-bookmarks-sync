@@ -1,14 +1,50 @@
-<!doctype html>
 <html>
 
 <head>
-    <meta charset="utf-8">
-    <title>Chrome Extension (built with TypeScript + React)</title>
-    <script src="js/popup.js"></script>
+    <link href="mui.min.css" rel="stylesheet" type="text/css" />
+    <style>
+        body {
+            background: linear-gradient(-45deg, #0085FF, #4732D5, #0051D4);
+            background-size: 400% 400%;
+            animation: gradient 15s ease infinite;
+            font-family: Seravek, 'Gill Sans Nova', Ubuntu, Calibri, 'DejaVu Sans', source-sans-pro, sans-serif;
+        }
+
+        @keyframes gradient {
+            0% {
+                background-position: 0% 50%;
+            }
+
+            50% {
+                background-position: 100% 50%;
+            }
+
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+
+    </style>
 </head>
 
 <body>
-    <div id="popup"></div>
+    <!-- example content -->
+    <div class="mui-container">
+        <br />
+        <div class="mui-panel" style="padding: 100px;">
+            <div class="mui--text-display2">Jira Sync Settings</div>
+            <br />
+            <div class="mui-textfield">
+                <div class="mui--text-headline">Jira URL</div>
+                <br />
+                <input type="input" value="https://XYZ.atlassian.net" id="url_input" />
+                <br />
+                <button class="mui-btn mui-btn--large mui-btn--primary mui-btn--raised" id="save"
+                    style="background-color: #0083FF;" onclick="checkAndSaveUrl();">Test & Save</button>
+            </div>
+        </div>
+    </div>
+    <script src="popup.js"></script>
 </body>
 
 </html>

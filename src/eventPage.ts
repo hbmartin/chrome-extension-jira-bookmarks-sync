@@ -76,14 +76,18 @@ chrome.bookmarks.onMoved.addListener(function(id: string, moveInfo: BookmarkMove
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    // onMessage must return "true" if response is async.
-    const isResponseAsync = false;
+    console.log(request);
+    console.log(sender);
+    let baseUrl = request["baseUrl"];
 
-    if (request.popupMounted) {
-        console.log('eventPage notified that Popup.tsx has mounted.');
-    }
+    fetch(`${baseUrl}/rest/api/2/permissions`, { method: 'GET' })
+        .then(response => {
+            console.log(response);
+            return response.json();
+        })
+        .then(sendResponse);
 
-    return isResponseAsync;
+    return true;
 });
 
 const clearIssueChildBookmarks = function(id: string, existing: string[]): Promise<void[]> {
@@ -264,12 +268,21 @@ const main = function() {
             syncJiraToBookmarks();
         } else {
             // TODO: move to popup
-            let jiraUrl = window.prompt("Please enter your Jira URL", "https://XYZ.atlassian.net");
-            console.log(jiraUrl);
+            chrome.tabs.getCurrent(tab => {
+                console.log(tab);
+                // chrome.windows.update(tab.windowId, { focused: true }, _ => chrome.action.openPopup());
+            })
+            chrome.tabs.create({ url: 'popup.html' });
+            // let jiraUrl = window.prompt("Please enter your Jira URL", "https://XYZ.atlassian.net");
+            // console.log(jiraUrl);
             // TODO: check ending slash and store
         }
     })
-}
+};
+
+chrome.runtime.onInstalled.addListener(_ => {
+    console.log("onInstalled");
+});
 
 // TODO: configuration of JIRA bookmark root
 chrome.alarms.onAlarm.addListener(function(alarm) {
