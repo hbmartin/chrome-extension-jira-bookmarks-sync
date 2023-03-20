@@ -3,7 +3,6 @@ import BookmarkMoveInfo = chrome.bookmarks.BookmarkMoveInfo;
 
 const JQL = 'assignee = currentUser() and statusCategory != Done ORDER BY updatedDate DESC';
 const rootFolderKey = "rootFolderKey";
-const foldersIdMapKey = "folders";
 const jiraUrlKey = "jiraUrlKey";
 
 function $<T>(api): (...args: any) => Promise<T> {
