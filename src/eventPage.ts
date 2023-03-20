@@ -5,6 +5,7 @@ const JQL = 'assignee = currentUser() and statusCategory != Done ORDER BY update
 const rootFolderKey = "rootFolderKey";
 const jiraUrlKey = "jiraUrlKey";
 
+// helper function for wrapping old Google Chrome callback style in a Promise
 function $<T>(api): (...args: any) => Promise<T> {
     return (...args: any): Promise<T> => {
         return new Promise<T>((resolve) => {
@@ -138,8 +139,6 @@ const createStatusFolders = function(rootFolderId: string, statusNames: string[]
                 {}
             );
             const folders = { ...newFolders, ...oldFolders };
-            console.log("createStatusFolders");
-            console.log(folders)
             chrome.storage.sync.set({ "folders": folders });
             return folders;
         });
@@ -198,9 +197,6 @@ const fetchIssues = function(jql: string): Promise<any> {
 };
 
 const createBookmarksFromIssues = function(rootFolderId: string, issues: any, folderMap: Record<string, string>): Promise<BookmarkTreeNode[]> {
-    console.log("createBookmarksFromIssues: folderMap");
-    console.log(folderMap);
-
     return getJiraUrl()
         .then(baseUrl => {
             return Promise.all<BookmarkTreeNode>(
@@ -259,8 +255,6 @@ const syncJiraToBookmarks = function() {
                         return fetchIssues(JQL);
                     })
                     .then(data => {
-                        console.log("data");
-                        console.log(data);
                         const statusNames = new Set<string>();
                         data["issues"].forEach(issue => {
                             const status = issue['fields']['status']['name'];
@@ -292,11 +286,11 @@ const syncJiraToBookmarks = function() {
     });
 }
 
-const main = function() {
+const main = function(doNotOpenSettings: boolean = false) {
     return getJiraUrl().then(baseUrl => {
         if (isNonEmptyString(baseUrl)) {
             syncJiraToBookmarks();
-        } else {
+        } else if (!doNotOpenSettings) {
             chrome.tabs.create({ url: 'popup.html' });
         }
     })
@@ -312,8 +306,7 @@ chrome.runtime.onStartup.addListener(() => {
     main();
 });
 
-// chrome.alarms.onAlarm.addListener(function(alarm) {
-//     console.log("Got an alarm!", alarm);
-//     // TODO
-// });
-// chrome.alarms.create({ periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener(_ => {
+    main(true);
+});
+chrome.alarms.create({ periodInMinutes: 10 });
