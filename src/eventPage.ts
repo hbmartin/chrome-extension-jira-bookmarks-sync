@@ -85,10 +85,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     fetch(`${baseUrl}/rest/api/2/permissions`, { method: 'GET' })
         .then(response => {
             console.log(response);
-            return response.json();
-        })
-        .then(sendResponse);
-
+            if (!response.ok) {
+                sendResponse(`Verification failed with error: ${response.status} ${response.statusText}`);
+            } else {
+                chrome.storage.sync.set({ jiraUrlKey: baseUrl }).then(_ => { main(); });
+                return sendResponse(null);
+            }
+        });
     return true;
 });
 
@@ -222,6 +225,7 @@ const getRootFolderId = function(): Promise<string> {
             } else {
                 return $<BookmarkTreeNode>(chrome.bookmarks.create)({
                     "title": "Jira Issues (Extension)",
+                    "parentId": "1",
                 })
                     .then(bookmarkTreeNode => {
                         return chrome.storage.sync.set({ rootFolderKey: bookmarkTreeNode.id })
@@ -276,6 +280,11 @@ const main = function() {
 
 chrome.runtime.onInstalled.addListener(_ => {
     console.log("onInstalled");
+    main();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+    console.log("onStartup");
     main();
 });
 

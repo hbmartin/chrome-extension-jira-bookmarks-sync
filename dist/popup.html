@@ -25,6 +25,18 @@
             }
         }
 
+        .error-msg {
+            color: #D8000C;
+            background-color: #FFBABA;
+            display: none;
+        }
+
+        .success-msg {
+            color: #270;
+            background-color: #DFF2BF;
+            display: none;
+        }
+
     </style>
 </head>
 
@@ -39,6 +51,14 @@
                 <div class="mui--text-headline">Jira URL</div>
                 <br />
                 <input type="input" value="https://XYZ.atlassian.net" id="url_input" />
+                <br />
+                <div class="mui-panel mui--text-title error-msg" id="error_message">
+                    Error here
+                </div>
+                <div class="mui-panel mui--text-title success-msg" id="success_message">
+                    Connectioned succeeded! Your Jira issues are now being synced to a new folder at the end of your
+                    bookmarks bar.
+                </div>
                 <br />
                 <button class="mui-btn mui-btn--large mui-btn--primary mui-btn--raised" id="save"
                     style="background-color: #0083FF;" onclick="checkAndSaveUrl();">Test & Save</button>
