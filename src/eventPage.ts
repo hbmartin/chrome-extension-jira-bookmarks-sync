@@ -1,7 +1,6 @@
 import BookmarkTreeNode = chrome.bookmarks.BookmarkTreeNode;
 import BookmarkMoveInfo = chrome.bookmarks.BookmarkMoveInfo;
 
-// TODO: transition cache
 const JQL = 'assignee = currentUser() and statusCategory != Done ORDER BY updatedDate DESC';
 const rootFolderKey = "rootFolderKey";
 const foldersIdMapKey = "folders";
@@ -24,38 +23,40 @@ chrome.bookmarks.onMoved.addListener(function(id: string, moveInfo: BookmarkMove
     // if not available, move it back (TODO)
     // 2. if it is, fire POST to Jira
     getOwnedFolders().then(folders => {
-        if (!folders) { return null; }
         console.log(folders);
+        if (!folders) { return null; }
         return Object.keys(folders).find(k => folders[k] == moveInfo.parentId);
     })
         .then(toStatusName => {
             if (toStatusName) {
                 chrome.bookmarks.get(id, function(bookmarks: BookmarkTreeNode[]) {
                     if (bookmarks.length != 0) {
-                        const url = bookmarks[0].url
-                        const key = url.split("/").pop()
-                        fetchIssue(key)
+                        const url = bookmarks[0].url;
+                        const issue = url.split("/").pop().split("#");
+                        const issue_name = issue[0];
+                        const key = issue[1];
+                        chrome.storage.local.get("transitions")
                             .then(data => {
                                 console.log(data);
-                                const transition = data['transitions'].find(t => t["to"]["name"] == toStatusName);
+                                const transition = data['transitions'][key][toStatusName];
                                 if (transition) {
                                     console.log(`found transitionId: ${transition}`)
-                                    transitionIssue(key, transition["id"])
+                                    transitionIssue(key, transition)
                                         .then(result => {
                                             console.log(result);
                                             if (result.ok) {
                                                 chrome.notifications.create({
                                                     "type": "basic",
-                                                    "title": `${key} transitioned to ${toStatusName}`,
+                                                    "title": `${issue_name} transitioned to ${toStatusName}`,
                                                     "message": "Do or do not. There is no try.",
-                                                    "iconUrl": "notification.png"
+                                                    "iconUrl": "/icon128.png"
                                                 });
                                             } else {
                                                 chrome.notifications.create({
                                                     "type": "basic",
-                                                    "title": `❌ failed ${key} transition to ${toStatusName}`,
+                                                    "title": `❌ failed moving ${issue_name} transition to ${toStatusName}`,
                                                     "message": `${result.status} : ${result.statusMessage}`,
-                                                    "iconUrl": "notification.png"
+                                                    "iconUrl": "/icon128.png"
                                                 });
                                             }
                                         })
@@ -63,9 +64,9 @@ chrome.bookmarks.onMoved.addListener(function(id: string, moveInfo: BookmarkMove
                                     console.log("TODO: no valid transitions, send this back to whence it came");
                                     chrome.notifications.create({
                                         "type": "basic",
-                                        "title": `❌ failed moving ${key} to ${toStatusName}`,
-                                        "message": "No legal transitions available",
-                                        "iconUrl": "notification.png"
+                                        "title": `❌ failed moving ${issue_name} to ${toStatusName}`,
+                                        "message": "No valid transitions available",
+                                        "iconUrl": "/icon128.png"
                                     });
                                 }
                             })
@@ -73,6 +74,12 @@ chrome.bookmarks.onMoved.addListener(function(id: string, moveInfo: BookmarkMove
                 });
             } else {
                 console.log("TODO: send this back to whence it came");
+                chrome.notifications.create({
+                    "type": "basic",
+                    "title": `❌ failed moving, this isn't a status folder in the Jira Sync Bookmarks`,
+                    "message": "Issues can only be moved to other status folders",
+                    "iconUrl": "/icon128.png"
+                });
             }
         });
 });
@@ -115,7 +122,7 @@ const clearIssueChildBookmarks = function(id: string, existing: string[]): Promi
         });
 }
 
-const createStatusFolders = function(rootFolderId: string, statusNames: string[]): Promise<Record<string, string>> {
+const createStatusFolders = function(rootFolderId: string, statusNames: string[], oldFolders: Record<string, string>): Promise<Record<string, string>> {
     return Promise.all(
         statusNames.map(statusName =>
             $<BookmarkTreeNode>(chrome.bookmarks.create)({
@@ -125,13 +132,16 @@ const createStatusFolders = function(rootFolderId: string, statusNames: string[]
         )
     )
         .then(results => {
-            const folders = results.reduce<Record<string, string>>((reduced, folder) => {
+            const newFolders = results.reduce<Record<string, string>>((reduced, folder) => {
                 reduced[folder["title"]] = folder["id"];
                 return reduced;
             },
                 {}
             );
-            chrome.storage.local.set({ folders });
+            const folders = { ...newFolders, ...oldFolders };
+            console.log("createStatusFolders");
+            console.log(folders)
+            chrome.storage.sync.set({ "folders": folders });
             return folders;
         });
 }
@@ -198,7 +208,7 @@ const createBookmarksFromIssues = function(rootFolderId: string, issues: any, fo
                 issues.map(issue => {
                     const status = issue['fields']['status']['name'];
                     const title = `[${issue['key']}] ${issue['fields']['summary']}`
-                    const url = `${baseUrl}/browse/${issue['key']}`
+                    const url = `${baseUrl}/browse/${issue['key']}#${issue['id']}`
                     return $<BookmarkTreeNode>(chrome.bookmarks.create)({
                         "parentId": folderMap[status] || rootFolderId,
                         "title": title,
@@ -214,7 +224,7 @@ const getJiraUrl = function(): Promise<string> {
 }
 
 const getOwnedFolders = function(): Promise<Record<string, string>> {
-    return chrome.storage.sync.get(foldersIdMapKey).then(items => { return items[foldersIdMapKey] });
+    return chrome.storage.sync.get("folders").then(items => { return items["folders"] });
 }
 
 const getRootFolderId = function(): Promise<string> {
@@ -242,7 +252,8 @@ const syncJiraToBookmarks = function() {
         console.log(`main: getRootFolderId: ${rootFolderId}`);
         getOwnedFolders()
             .then(folders => {
-                console.log(folders ? `folders: ${folders}` : "no owned folders");
+                console.log("folders");
+                console.log(folders);
                 return clearIssueChildBookmarks(rootFolderId, folders ? Object.values(folders) : [])
                     .then(() => {
                         console.log(`fetching: ${JQL}`);
@@ -259,9 +270,23 @@ const syncJiraToBookmarks = function() {
                         const oldStatuses = folders ? Object.keys(folders) : [];
                         const newStatuses = Array.from(statusNames.values())
                             .filter(status => !oldStatuses.includes(status));
-                        return createStatusFolders(rootFolderId, newStatuses)
+                        return createStatusFolders(rootFolderId, newStatuses, folders)
                             .then(folderMap => {
                                 return createBookmarksFromIssues(rootFolderId, data["issues"], { ...folderMap, ...folders });
+                            })
+                            .then(_ => {
+                                const transitionsByIssue = data["issues"].reduce((acc, issue) => {
+                                    return {
+                                        ...acc,
+                                        [issue["id"]]: issue["transitions"].reduce((tacc, t) => {
+                                            return {
+                                                ...tacc,
+                                                [`${t["to"]["name"]}`]: t["id"]
+                                            };
+                                        }, {})
+                                    }
+                                }, {});
+                                chrome.storage.local.set({ "transitions": transitionsByIssue });
                             });
                     });
             });
