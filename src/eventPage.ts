@@ -24,61 +24,63 @@ chrome.bookmarks.onMoved.addListener(function(id: string, moveInfo: BookmarkMove
     // if not available, move it back (TODO)
     // 2. if it is, fire POST to Jira
     getOwnedFolders().then(folders => {
-        if (!folders) { return; }
+        if (!folders) { return null; }
         console.log(folders);
-        const toStatusName = Object.keys(folders).find(k => folders[k] == moveInfo.parentId);
-        if (toStatusName) {
-            chrome.bookmarks.get(id, function(bookmarks: BookmarkTreeNode[]) {
-                if (bookmarks.length != 0) {
-                    const url = bookmarks[0].url
-                    const key = url.split("/").pop()
-                    fetchIssue(key)
-                        .then(data => {
-                            console.log(data);
-                            const transition = data['transitions'].find(t => t["to"]["name"] == toStatusName);
-                            if (transition) {
-                                console.log(`found transitionId: ${transition}`)
-                                transitionIssue(key, transition["id"])
-                                    .then(result => {
-                                        console.log(result);
-                                        if (result.ok) {
-                                            chrome.notifications.create({
-                                                "type": "basic",
-                                                "title": `${key} transitioned to ${toStatusName}`,
-                                                "message": "Do or do not. There is no try.",
-                                                "iconUrl": "notification.png"
-                                            });
-                                        } else {
-                                            chrome.notifications.create({
-                                                "type": "basic",
-                                                "title": `❌ failed ${key} transition to ${toStatusName}`,
-                                                "message": `${result.status} : ${result.statusMessage}`,
-                                                "iconUrl": "notification.png"
-                                            });
-                                        }
-                                    })
-                            } else {
-                                console.log("TODO: no valid transitions, send this back to whence it came");
-                                chrome.notifications.create({
-                                    "type": "basic",
-                                    "title": `❌ failed moving ${key} to ${toStatusName}`,
-                                    "message": "No legal transitions available",
-                                    "iconUrl": "notification.png"
-                                });
-                            }
-                        })
-                }
-            });
-        } else {
-            console.log("TODO: send this back to whence it came");
-        }
-    });
+        return Object.keys(folders).find(k => folders[k] == moveInfo.parentId);
+    })
+        .then(toStatusName => {
+            if (toStatusName) {
+                chrome.bookmarks.get(id, function(bookmarks: BookmarkTreeNode[]) {
+                    if (bookmarks.length != 0) {
+                        const url = bookmarks[0].url
+                        const key = url.split("/").pop()
+                        fetchIssue(key)
+                            .then(data => {
+                                console.log(data);
+                                const transition = data['transitions'].find(t => t["to"]["name"] == toStatusName);
+                                if (transition) {
+                                    console.log(`found transitionId: ${transition}`)
+                                    transitionIssue(key, transition["id"])
+                                        .then(result => {
+                                            console.log(result);
+                                            if (result.ok) {
+                                                chrome.notifications.create({
+                                                    "type": "basic",
+                                                    "title": `${key} transitioned to ${toStatusName}`,
+                                                    "message": "Do or do not. There is no try.",
+                                                    "iconUrl": "notification.png"
+                                                });
+                                            } else {
+                                                chrome.notifications.create({
+                                                    "type": "basic",
+                                                    "title": `❌ failed ${key} transition to ${toStatusName}`,
+                                                    "message": `${result.status} : ${result.statusMessage}`,
+                                                    "iconUrl": "notification.png"
+                                                });
+                                            }
+                                        })
+                                } else {
+                                    console.log("TODO: no valid transitions, send this back to whence it came");
+                                    chrome.notifications.create({
+                                        "type": "basic",
+                                        "title": `❌ failed moving ${key} to ${toStatusName}`,
+                                        "message": "No legal transitions available",
+                                        "iconUrl": "notification.png"
+                                    });
+                                }
+                            })
+                    }
+                });
+            } else {
+                console.log("TODO: send this back to whence it came");
+            }
+        });
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log(request);
     console.log(sender);
-    let baseUrl = request["baseUrl"];
+    const baseUrl = request["baseUrl"];
 
     fetch(`${baseUrl}/rest/api/2/permissions`, { method: 'GET' })
         .then(response => {
@@ -267,28 +269,18 @@ const main = function() {
         if (isNonEmptyString(baseUrl)) {
             syncJiraToBookmarks();
         } else {
-            // TODO: move to popup
-            chrome.tabs.getCurrent(tab => {
-                console.log(tab);
-                // chrome.windows.update(tab.windowId, { focused: true }, _ => chrome.action.openPopup());
-            })
             chrome.tabs.create({ url: 'popup.html' });
-            // let jiraUrl = window.prompt("Please enter your Jira URL", "https://XYZ.atlassian.net");
-            // console.log(jiraUrl);
-            // TODO: check ending slash and store
         }
     })
 };
 
 chrome.runtime.onInstalled.addListener(_ => {
     console.log("onInstalled");
+    main();
 });
 
-// TODO: configuration of JIRA bookmark root
-chrome.alarms.onAlarm.addListener(function(alarm) {
-    console.log("Got an alarm!", alarm);
-    // main()
-});
-chrome.alarms.create({ periodInMinutes: 1 });
-
-main();
+// chrome.alarms.onAlarm.addListener(function(alarm) {
+//     console.log("Got an alarm!", alarm);
+//     // TODO
+// });
+// chrome.alarms.create({ periodInMinutes: 1 });
