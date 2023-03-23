@@ -1,5 +1,7 @@
 # Jira Bookmarks Sync (Chrome Extension)
 
+[![Main](https://github.com/hbmartin/chrome-extension-jira-bookmarks-sync/actions/workflows/main.yml/badge.svg)](https://github.com/hbmartin/chrome-extension-jira-bookmarks-sync/actions/workflows/main.yml)
+
 ## Features
 
 * Syncs your Jira issues to bookmarks
