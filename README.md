@@ -3,11 +3,13 @@
 ## Features
 
 * Syncs your Jira issues to bookmarks
-* Move an issue bookmark between statu folders to transitions them in Jira
+* Move an issue bookmark between status folders to automatically transition them in Jira
+
+<img src="media/screenshot.png" height="150" />
 
 ## Installation
 
-1. Download the latest release from the [Releases page](https://github.com/hbmartin/chrome-extension-jira-bookmarks-sync/releases)
+1. Downloadthe latest  `dist.zip` from the [Releases page](https://github.com/hbmartin/chrome-extension-jira-bookmarks-sync/releases)
 2. Go to [_chrome://extensions_](chrome://extensions) in Google Chrome
 3. Turn on the Developer mode using the toggle in the upper right corner
 4. Click **Load unpacked** button in the upper left corner 

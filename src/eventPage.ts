@@ -14,17 +14,19 @@ function $<T>(api): (...args: any) => Promise<T> {
     };
 }
 
-// TODO: monitor removed event as well
 chrome.bookmarks.onMoved.addListener(function(id: string, moveInfo: BookmarkMoveInfo) {
     console.log(moveInfo);
-    // if it's one of our folders but not an issue, move it back (TODO)
+    // if it's one of our bookmarks but not moved to a status folder, move it back
     // if it is a ticket, try to transition it
-    // 1. request issue and identify correct transition ID
-    // if not available, move it back (TODO)
+    // 1. identify correct transition ID
+    // if not available, move it back
     // 2. if it is, fire POST to Jira
     getOwnedFolders().then(folders => {
         console.log(folders);
-        if (!folders) { return null; }
+        if (!folders) { throw new Error('No folders found'); }
+        if (!Object.keys(folders).find(k => folders[k] == moveInfo.oldParentId)) {
+            throw new Error('This moved bookmark does not belong to us.');
+        }
         return Object.keys(folders).find(k => folders[k] == moveInfo.parentId);
     })
         .then(toStatusName => {
@@ -44,6 +46,7 @@ chrome.bookmarks.onMoved.addListener(function(id: string, moveInfo: BookmarkMove
                                     transitionIssue(key, transition)
                                         .then(result => {
                                             console.log(result);
+                                            // TODO: refresh transition cache for this issue
                                             if (result.ok) {
                                                 chrome.notifications.create({
                                                     "type": "basic",
@@ -61,7 +64,7 @@ chrome.bookmarks.onMoved.addListener(function(id: string, moveInfo: BookmarkMove
                                             }
                                         })
                                 } else {
-                                    console.log("TODO: no valid transitions, send this back to whence it came");
+                                    chrome.bookmarks.move(id, { parentId: moveInfo.oldParentId });
                                     chrome.notifications.create({
                                         "type": "basic",
                                         "title": `❌ failed moving ${issue_name} to ${toStatusName}`,
@@ -73,7 +76,7 @@ chrome.bookmarks.onMoved.addListener(function(id: string, moveInfo: BookmarkMove
                     }
                 });
             } else {
-                console.log("TODO: send this back to whence it came");
+                chrome.bookmarks.move(id, { parentId: moveInfo.oldParentId });
                 chrome.notifications.create({
                     "type": "basic",
                     "title": `❌ failed moving, this isn't a status folder in the Jira Sync Bookmarks`,
